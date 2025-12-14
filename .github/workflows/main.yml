@@ -42,15 +42,16 @@ jobs:
         # This avoids installing conda which can be slow.
         mlflow run MLProject --env-manager=local --experiment-name=Basic_Model_Experiment
       env:
-        # Use a local file URI for tracking so we can access it in later steps
-        MLFLOW_TRACKING_URI: file:./mlruns
+        # Use an absolute path for tracking URI to avoid issues when CWD changes
+        MLFLOW_TRACKING_URI: file://${{ github.workspace }}/mlruns
 
     - name: Get latest MLflow run_id
       id: get_run_id
       run: |
         python -c "
         import mlflow
-        mlflow.set_tracking_uri('file:./mlruns')
+        import os
+        mlflow.set_tracking_uri('file://' + os.environ['GITHUB_WORKSPACE'] + '/mlruns')
         runs = mlflow.search_runs(experiment_names=['Basic_Model_Experiment'])
         if not runs.empty:
             latest_run = runs.iloc[0]
@@ -91,7 +92,7 @@ jobs:
 
     - name: Build Docker Model
       env:
-        MLFLOW_TRACKING_URI: file:./mlruns
+        MLFLOW_TRACKING_URI: file://${{ github.workspace }}/mlruns
       run: |
         # Build Docker image using MLflow
         # 'my-docker-image' is the name we assign locally
