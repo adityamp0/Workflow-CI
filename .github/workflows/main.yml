@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install mlflow==2.19.0 pandas numpy scikit-learn virtualenv
+        pip install mlflow==2.19.0 pandas numpy scikit-learn==1.5.2 virtualenv
         # Install skicka or other tools if needed for gdrive upload, but the action handles it usually.
 
     - name: Run mlflow project
