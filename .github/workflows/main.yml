@@ -123,5 +123,5 @@ jobs:
     - name: Push Docker Image
       run: |
         # Push to Docker Hub
-        docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:${{ steps.get_run_id.outputs.run_id }}
-        docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:latest
+        docker push ${{ secrets.DOCKER_HUB_USERNAME }}/mlflow-model:${{ steps.get_run_id.outputs.run_id }}
+        docker push ${{ secrets.DOCKER_HUB_USERNAME }}/mlflow-model:latest
