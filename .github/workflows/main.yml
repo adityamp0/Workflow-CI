@@ -1,0 +1,126 @@
+name: CI Workflow
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build_and_train:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Set up job
+      run: echo "Starting job"
+
+    - name: Run actions/checkout@v3
+      uses: actions/checkout@v3
+
+    - name: Set up Python 3.12.7
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12.7'
+
+    - name: Check Env
+      run: |
+        python --version
+        pip --version
+        ls -R
+
+    - name: Install dependencies
+      run: |
+        pip install mlflow==2.19.0 pandas numpy scikit-learn virtualenv
+        # Install skicka or other tools if needed for gdrive upload, but the action handles it usually.
+
+    - name: Run mlflow project
+      run: |
+        # Run the MLflow project. --env-manager=local uses the current environment (with pip packages installed above)
+        # This avoids installing conda which can be slow.
+        mlflow run MLProject --env-manager=local --experiment-name=Basic_Model_Experiment
+      env:
+        # Use a local file URI for tracking so we can access it in later steps
+        MLFLOW_TRACKING_URI: file:./mlruns
+
+    - name: Get latest MLflow run_id
+      id: get_run_id
+      run: |
+        python -c "
+        import mlflow
+        mlflow.set_tracking_uri('file:./mlruns')
+        runs = mlflow.search_runs(experiment_names=['Basic_Model_Experiment'])
+        if not runs.empty:
+            latest_run = runs.iloc[0]
+            print(f'Latest Run ID: {latest_run.run_id}')
+            import os
+            with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+                f.write(f'run_id={latest_run.run_id}\n')
+        else:
+            print('No runs found.')
+            exit(1)
+        "
+
+    - name: Install Python dependencies
+      run: |
+        # Ensure dependencies are available for any subsequent python scripts
+        pip install pandas numpy scikit-learn
+
+    - name: Commit and Push Artifacts to GitHub LFS
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        
+        # Install Git LFS
+        git lfs install
+        
+        # Track artifact files
+        git lfs track "mlruns/**"
+        git add .gitattributes
+        
+        # Add artifacts
+        git add mlruns
+        
+        # Commit and Push
+        # We use [skip ci] to prevent infinite loops
+        git commit -m "Auto-save MLflow artifacts [run_id: ${{ steps.get_run_id.outputs.run_id }}] [skip ci]" || echo "No changes to commit"
+        git push
+
+
+    - name: Build Docker Model
+      env:
+        MLFLOW_TRACKING_URI: file:./mlruns
+      run: |
+        # Build Docker image using MLflow
+        # 'my-docker-image' is the name we assign locally
+        mlflow models build-docker \
+          -m "runs:/${{ steps.get_run_id.outputs.run_id }}/model" \
+          -n "my-docker-image" \
+          --enable-mlserver
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v2
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Tag Docker Image
+      run: |
+        # Tag the image for Docker Hub
+        # Replace 'username' with your Docker Hub username if hardcoding, 
+        # or use the secret DOCKER_USERNAME.
+        IMAGE_TAG=${{ secrets.DOCKER_USERNAME }}/mlflow-model:${{ steps.get_run_id.outputs.run_id }}
+        LATEST_TAG=${{ secrets.DOCKER_USERNAME }}/mlflow-model:latest
+        
+        docker tag my-docker-image $IMAGE_TAG
+        docker tag my-docker-image $LATEST_TAG
+        
+        echo "image_tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+
+    - name: Push Docker Image
+      run: |
+        # Push to Docker Hub
+        docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:${{ steps.get_run_id.outputs.run_id }}
+        docker push ${{ secrets.DOCKER_USERNAME }}/mlflow-model:latest
